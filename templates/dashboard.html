@@ -159,6 +159,10 @@
                 {% endif %}
             </div>
         </div>
+        <div class="stat-card">
+            <div class="label">Total ACUs</div>
+            <div class="value yellow">{{ stats.total_acus }}</div>
+        </div>
     </div>
 
     <!-- ── Task table ──────────────────────────── -->
@@ -171,6 +175,7 @@
                     <th>Status</th>
                     <th>Devin Session</th>
                     <th>Pull Request</th>
+                    <th>ACUs</th>
                     <th>Created</th>
                 </tr>
             </thead>
@@ -200,6 +205,13 @@
                             —
                         {% endif %}
                     </td>
+                    <td style="color:#d29922; font-size:0.85rem;">
+                        {% if t.acus_consumed %}
+                            {{ t.acus_consumed | round(2) }}
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
                     <td style="color:#8b949e; font-size:0.8rem;">
                         {{ t.created_at[:16] | replace('T', ' ') }}
                     </td>
@@ -207,7 +219,7 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="6" class="empty-state">
+                    <td colspan="7" class="empty-state">
                         <div style="font-size:2rem">📭</div>
                         <p>No issues processed yet.<br>
                         Label an issue with <code>{{ "devin-autofix" }}</code> to get started.</p>

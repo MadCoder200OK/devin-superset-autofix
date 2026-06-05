@@ -46,6 +46,7 @@ class Tracker:
                 status          TEXT DEFAULT 'pending',
                 pr_url          TEXT,
                 error_message   TEXT,
+                acus_consumed   REAL DEFAULT 0.0,
                 created_at      TEXT NOT NULL,
                 updated_at      TEXT NOT NULL,
                 completed_at    TEXT
@@ -94,6 +95,7 @@ class Tracker:
         status: str,
         pr_url: str = None,
         error_message: str = None,
+        acus_consumed: float = None,
     ):
         now = _now()
         completed = now if status in ("completed", "error", "failed") else None
@@ -102,9 +104,10 @@ class Tracker:
                SET status=?, pr_url=COALESCE(?, pr_url),
                    error_message=COALESCE(?, error_message),
                    completed_at=COALESCE(?, completed_at),
+                   acus_consumed=COALESCE(?, acus_consumed),
                    updated_at=?
                WHERE session_id=?""",
-            (status, pr_url, error_message, completed, now, session_id),
+            (status, pr_url, error_message, completed, now, acus_consumed, session_id),
         )
         self._conn.commit()
 
@@ -154,6 +157,8 @@ class Tracker:
                FROM tasks WHERE completed_at IS NOT NULL"""
         ).fetchone()
         avg_seconds = avg_row["avg_seconds"] if avg_row and avg_row["avg_seconds"] else None
+        acu_row = self._conn.execute("SELECT SUM(acus_consumed) as total_acus FROM tasks").fetchone()
+        total_acus = acu_row["total_acus"] if acu_row and acu_row["total_acus"] else 0.0
 
         return {
             "total": total,
@@ -164,4 +169,5 @@ class Tracker:
             "pending": by_status.get("pending", 0),
             "success_rate": round(completed / total * 100, 1) if total > 0 else 0,
             "avg_completion_seconds": round(avg_seconds, 1) if avg_seconds else None,
+            "total_acus": round(total_acus, 2),
         }

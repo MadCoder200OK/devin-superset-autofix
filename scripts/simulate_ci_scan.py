@@ -3,7 +3,7 @@
 simulate_ci_scan.py — Simulates a CI pipeline security scan + auto-remediation.
 
 This demonstrates "Level 2" automation: scanner finds issues → Devin fixes them.
-No human writes issues. The system discovers AND remediates autonomously.
+The system discovers issues and remediates autonomously.
 
 Two modes:
   --live     Actually runs pip-audit against Superset's requirements (needs pip-audit installed)
