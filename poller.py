@@ -14,41 +14,43 @@ logger = logging.getLogger(__name__)
 POLL_INTERVAL = 30  # seconds
 TERMINAL_STATUSES = {"exit", "error", "suspended", "stopped"}
 
-# Devin status → our simplified status
 STATUS_MAP = {
     "running": "running",
-    "blocked": "running",      # waiting for input, still active
+    "blocked": "running",
     "exit": "completed",
     "error": "error",
-    "suspended": "failed",
-    "stopped": "failed",
+    "suspended": "completed",
+    "stopped": "completed",
 }
 
 
 def _extract_pr_url(session_data: dict) -> str | None:
-    """Try to extract a PR URL from session data or structured output."""
-    # Check structured_output first
     structured = session_data.get("structured_output")
     if structured and isinstance(structured, dict):
         pr = structured.get("pr_url") or structured.get("pull_request_url")
         if pr:
             return pr
 
-    # Check the session URL — sometimes Devin links PRs in the result
-    # Also scan last messages for github PR URLs
     result = session_data.get("result", "") or ""
     pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", result)
     if pr_match:
         return pr_match.group(0)
 
+    status_info = session_data.get("status_info", "") or ""
+    pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", status_info)
+    if pr_match:
+        return pr_match.group(0)
+
+    for key, val in session_data.items():
+        if isinstance(val, str):
+            pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", val)
+            if pr_match:
+                return pr_match.group(0)
+
     return None
 
 
 async def poll_sessions(tracker: Tracker, devin: DevinClient):
-    """
-    Continuously poll active Devin sessions and update the tracker.
-    Designed to run as a long-lived asyncio background task.
-    """
     logger.info("Poller started — checking every %ds", POLL_INTERVAL)
 
     while True:
@@ -60,7 +62,7 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
             for task in active:
                 session_id = task.get("session_id")
                 if not session_id:
-                    continue  # pending task, no session yet
+                    continue
 
                 try:
                     data = devin.get_session(session_id)
@@ -69,8 +71,11 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
 
                     pr_url = _extract_pr_url(data)
 
+                    if pr_url:
+                        mapped = "completed"
+
                     error_msg = None
-                    if mapped in ("error", "failed"):
+                    if mapped in ("error", "failed") and not pr_url:
                         error_msg = data.get("status_info", raw_status)
 
                     if mapped != task["status"] or pr_url:
@@ -81,7 +86,7 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
                             error_message=error_msg,
                         )
                         logger.info(
-                            f"Session {session_id}: {task['status']} → {mapped}"
+                            f"Session {session_id}: {task['status']} -> {mapped}"
                             + (f" PR: {pr_url}" if pr_url else "")
                         )
 
