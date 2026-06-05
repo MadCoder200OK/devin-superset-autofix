@@ -99,6 +99,19 @@ class DevinClient:
     def get_messages(self, session_id: str) -> dict:
         """Get all messages/events from a session."""
         return self._request("GET", f"sessions/{session_id}/messages")
+    
+    # ── Consumption / ACU tracking ───────────────────────────
+
+    def get_session_acus(self, session_id: str):
+        """Get ACU consumption for a session. Returns raw response for debugging."""
+        devin_id = f"devin-{session_id}" if not session_id.startswith("devin-") else session_id
+        try:
+            data = self._request("GET", f"consumption/daily/sessions/{devin_id}")
+            logger.info(f"[ACU RAW] session={session_id[:12]} response={data}")
+            return data
+        except Exception as e:
+            logger.warning(f"Could not fetch ACUs for {session_id}: {e}")
+            return None
 
     # ── Convenience ──────────────────────────────────────────
 

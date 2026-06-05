@@ -107,7 +107,7 @@ class Tracker:
                    acus_consumed=COALESCE(?, acus_consumed),
                    updated_at=?
                WHERE session_id=?""",
-            (status, pr_url, error_message, completed, now, acus_consumed, session_id),
+            (status, pr_url, error_message, completed, acus_consumed, now, session_id),
         )
         self._conn.commit()
 

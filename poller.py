@@ -2,6 +2,7 @@
 Poller — background worker that polls Devin sessions and updates the tracker.
 """
 import asyncio
+import json
 import logging
 import re
 from devin_client import DevinClient
@@ -54,11 +55,37 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
                     pr_url = _extract_pr_url(data)
                     if pr_url:
                         mapped = "completed"
-                    acus = data.get("acus_consumed", 0.0) or 0.0
+
+                    # ── ACU LOGGING ──────────────────────────
+                    acus = 0.0
+                    if mapped == "completed":
+                        logger.info(f"[ACU DEBUG] Session {session_id[:12]} completed, fetching ACUs...")
+                        try:
+                            acu_data = devin.get_session_acus(session_id)
+                            logger.info(f"[ACU DEBUG] Raw consumption response: {acu_data}")
+                            logger.info(f"[ACU DEBUG] Type: {type(acu_data)}")
+                            if isinstance(acu_data, dict):
+                                acus = float(acu_data.get("total_acus", 0.0))
+                            elif isinstance(acu_data, (int, float)):
+                                acus = float(acu_data)
+                            else:
+                                acus = 0.0
+                            logger.info(f"[ACU DEBUG] Final ACU value: {acus}")
+                        except Exception as e:
+                            logger.error(f"[ACU DEBUG] Error fetching ACUs: {e}")
+                            acus = 0.0
+
+                    # Also log what session API returns for acus_consumed
+                    session_acus = data.get("acus_consumed")
+                    logger.info(f"[ACU DEBUG] session.acus_consumed = {session_acus} (type: {type(session_acus).__name__})")
+                    # ── END ACU LOGGING ──────────────────────
+
                     error_msg = None
                     if mapped in ("error", "failed") and not pr_url:
                         error_msg = data.get("status_info", raw_status)
+
                     if mapped != task["status"] or (pr_url and not task.get("pr_url")):
+                        logger.info(f"[UPDATE] session={session_id[:12]} status={mapped} pr={pr_url} acus={acus}")
                         tracker.update_status(
                             session_id=session_id, status=mapped, pr_url=pr_url,
                             error_message=error_msg, acus_consumed=acus,
