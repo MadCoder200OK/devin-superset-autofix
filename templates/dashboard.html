@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Devin AutoFix — Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            padding: 2rem;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #30363d;
+        }
+        .header h1 { font-size: 1.5rem; font-weight: 600; }
+        .header h1 span { color: #58a6ff; }
+        .header .meta { color: #8b949e; font-size: 0.85rem; }
+
+        /* ── Stat cards ─────────────────────────── */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 1.2rem;
+        }
+        .stat-card .label { color: #8b949e; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+        .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 0.3rem; }
+        .stat-card .value.green  { color: #3fb950; }
+        .stat-card .value.blue   { color: #58a6ff; }
+        .stat-card .value.yellow { color: #d29922; }
+        .stat-card .value.red    { color: #f85149; }
+
+        /* ── Task table ─────────────────────────── */
+        .table-wrap {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th {
+            text-align: left;
+            padding: 0.75rem 1rem;
+            background: #1c2129;
+            color: #8b949e;
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            border-bottom: 1px solid #30363d;
+        }
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #21262d;
+            vertical-align: middle;
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover { background: #1c2129; }
+
+        /* ── Status badges ──────────────────────── */
+        .badge {
+            display: inline-block;
+            padding: 0.15rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge.completed { background: #23312a; color: #3fb950; }
+        .badge.running   { background: #1f2a3d; color: #58a6ff; }
+        .badge.pending   { background: #2a2418; color: #d29922; }
+        .badge.error, .badge.failed { background: #2d1b1e; color: #f85149; }
+
+        /* ── Category badges ────────────────────── */
+        .cat {
+            display: inline-block;
+            padding: 0.1rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            font-weight: 500;
+            background: #1f2a3d;
+            color: #79c0ff;
+        }
+        .cat.dependency { background: #1f2d1f; color: #7ee787; }
+        .cat.security   { background: #2d1b1e; color: #ffa198; }
+        .cat.code-quality { background: #2a2418; color: #e3b341; }
+
+        a { color: #58a6ff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+
+        .issue-title { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        .refresh-note {
+            text-align: center;
+            color: #484f58;
+            font-size: 0.8rem;
+            margin-top: 1.5rem;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #484f58;
+        }
+        .empty-state p { margin-top: 0.5rem; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 Devin <span>AutoFix</span> Dashboard</h1>
+        <div class="meta">
+            Repo: <a href="https://github.com/{{ repo }}" target="_blank">{{ repo }}</a>
+            &nbsp;·&nbsp; {{ now }}
+        </div>
+    </div>
+
+    <!-- ── Stat cards ──────────────────────────── -->
+    <div class="stats">
+        <div class="stat-card">
+            <div class="label">Total Issues</div>
+            <div class="value blue">{{ stats.total }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Running</div>
+            <div class="value yellow">{{ stats.running }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Completed</div>
+            <div class="value green">{{ stats.completed }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Failed</div>
+            <div class="value red">{{ stats.failed }}</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Success Rate</div>
+            <div class="value green">{{ stats.success_rate }}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">Avg Fix Time</div>
+            <div class="value blue">
+                {% if stats.avg_completion_seconds %}
+                    {{ (stats.avg_completion_seconds / 60) | round(1) }}m
+                {% else %}
+                    —
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Task table ──────────────────────────── -->
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Issue</th>
+                    <th>Category</th>
+                    <th>Status</th>
+                    <th>Devin Session</th>
+                    <th>Pull Request</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% if tasks %}
+                {% for t in tasks %}
+                <tr>
+                    <td class="issue-title">
+                        <a href="{{ t.issue_url or '#' }}" target="_blank">#{{ t.issue_number }}</a>
+                        {{ t.issue_title }}
+                    </td>
+                    <td><span class="cat {{ t.category }}">{{ t.category }}</span></td>
+                    <td><span class="badge {{ t.status }}">{{ t.status }}</span></td>
+                    <td>
+                        {% if t.session_url %}
+                            <a href="{{ t.session_url }}" target="_blank">View</a>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if t.pr_url %}
+                            <a href="{{ t.pr_url }}" target="_blank">PR</a>
+                        {% elif t.status == 'error' %}
+                            <span style="color:#f85149" title="{{ t.error_message or '' }}">✗</span>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td style="color:#8b949e; font-size:0.8rem;">
+                        {{ t.created_at[:16] | replace('T', ' ') }}
+                    </td>
+                </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="6" class="empty-state">
+                        <div style="font-size:2rem">📭</div>
+                        <p>No issues processed yet.<br>
+                        Label an issue with <code>{{ "devin-autofix" }}</code> to get started.</p>
+                    </td>
+                </tr>
+            {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="refresh-note">Auto-refreshes every 30s · <a href="/api/status">JSON API</a></div>
+
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(() => location.reload(), 30000);
+    </script>
+</body>
+</html>
