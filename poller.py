@@ -1,6 +1,5 @@
 """
 Poller — background worker that polls Devin sessions and updates the tracker.
-Runs as an asyncio task inside the FastAPI app.
 """
 
 import asyncio
@@ -11,8 +10,7 @@ from tracker import Tracker
 
 logger = logging.getLogger(__name__)
 
-POLL_INTERVAL = 30  # seconds
-TERMINAL_STATUSES = {"exit", "error", "suspended", "stopped"}
+POLL_INTERVAL = 30
 
 STATUS_MAP = {
     "running": "running",
@@ -25,24 +23,23 @@ STATUS_MAP = {
 
 
 def _extract_pr_url(session_data: dict) -> str | None:
+    # Check pull_requests array FIRST — this is where Devin puts them
+    prs = session_data.get("pull_requests", [])
+    if prs and isinstance(prs, list) and len(prs) > 0:
+        pr_url = prs[0].get("pr_url")
+        if pr_url:
+            return pr_url
+
+    # Fallback: check structured_output
     structured = session_data.get("structured_output")
     if structured and isinstance(structured, dict):
         pr = structured.get("pr_url") or structured.get("pull_request_url")
         if pr:
             return pr
 
-    result = session_data.get("result", "") or ""
-    pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", result)
-    if pr_match:
-        return pr_match.group(0)
-
-    status_info = session_data.get("status_info", "") or ""
-    pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", status_info)
-    if pr_match:
-        return pr_match.group(0)
-
+    # Fallback: scan string fields for PR URLs
     for key, val in session_data.items():
-        if isinstance(val, str):
+        if isinstance(val, str) and "/pull/" in val:
             pr_match = re.search(r"https://github\.com/[^/]+/[^/]+/pull/\d+", val)
             if pr_match:
                 return pr_match.group(0)
@@ -71,6 +68,7 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
 
                     pr_url = _extract_pr_url(data)
 
+                    # If a PR exists, mark completed regardless of Devin status
                     if pr_url:
                         mapped = "completed"
 
@@ -78,7 +76,7 @@ async def poll_sessions(tracker: Tracker, devin: DevinClient):
                     if mapped in ("error", "failed") and not pr_url:
                         error_msg = data.get("status_info", raw_status)
 
-                    if mapped != task["status"] or pr_url:
+                    if mapped != task["status"] or (pr_url and not task.get("pr_url")):
                         tracker.update_status(
                             session_id=session_id,
                             status=mapped,
