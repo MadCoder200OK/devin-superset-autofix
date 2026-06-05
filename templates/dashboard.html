@@ -207,7 +207,7 @@
                     </td>
                     <td style="color:#d29922; font-size:0.85rem;">
                         {% if t.acus_consumed %}
-                            {{ t.acus_consumed | round(2) }}
+                            {{ t.acus_consumed | float | round(2) }}
                         {% else %}
                             —
                         {% endif %}

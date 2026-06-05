@@ -12,10 +12,10 @@ Engineering teams accumulate security and maintenance debt faster than they can 
 
 ```
 ┌──────────────────┐       ┌──────────────────┐       ┌──────────────────┐
-│  GitHub Webhook   │       │  AutoFix Server   │       │    Devin API     │
-│  (issue.labeled)  │──────▶│  FastAPI + Poller  │──────▶│   Sessions       │
-└──────────────────┘       └────────┬─────────┘       └────────┬─────────┘
-                                    │                           │
+│  GitHub Actions   │       │  AutoFix Server   │       │    Devin API     │
+│  (issue.labeled   │──────▶│  FastAPI + Poller  │──────▶│   Sessions       │
+│   or CI scan)     │       └────────┬─────────┘       └────────┬─────────┘
+└──────────────────┘                │                           │
                              ┌──────▼──────┐            ┌──────▼──────┐
                              │  SQLite DB   │            │  Pull Reqs   │
                              │  (tracking)  │            │  on GitHub   │
@@ -27,13 +27,11 @@ Engineering teams accumulate security and maintenance debt faster than they can 
                              └─────────────┘
 ```
 
-**Flow:**
-1. An issue is created on the Superset fork with the `devin-autofix` label
-2. GitHub sends a webhook to the AutoFix server
-3. The server creates a Devin session with a targeted prompt
-4. A background poller monitors the session until completion
-5. Devin clones the repo, writes the fix, and opens a PR
-6. The dashboard shows real-time status, success rates, and PR links
+**Three trigger modes:**
+
+1. **GitHub Action (primary):** An issue is labeled `devin-autofix` → GitHub Action calls the Devin API directly → Devin creates a PR
+2. **Manual API trigger:** Call `/api/trigger` endpoint → creates a Devin session → tracked on the dashboard
+3. **CI scan simulation:** Run `simulate_ci_scan.py` → scans dependencies for CVEs → dispatches Devin sessions for each finding
 
 ## Quick Start
 
@@ -41,7 +39,7 @@ Engineering teams accumulate security and maintenance debt faster than they can 
 
 - Docker & Docker Compose
 - A [Devin](https://devin.ai) account with API access
-- A GitHub Personal Access Token with `repo` scope
+- A GitHub Personal Access Token with `repo` and `workflow` scope
 
 ### 1. Clone and configure
 
@@ -56,7 +54,7 @@ Edit `.env` with your credentials:
 ```
 DEVIN_API_KEY=cog_...        # From Devin Settings → Service Users
 DEVIN_ORG_ID=...             # From Devin Settings → Service Users
-GITHUB_TOKEN=ghp_...         # GitHub PAT with repo scope
+GITHUB_TOKEN=ghp_...         # GitHub PAT with repo + workflow scope
 GITHUB_REPO=MadCoder200OK/superset
 ```
 
@@ -71,32 +69,44 @@ The dashboard will be available at **http://localhost:8000**.
 ### 3. Seed issues on your fork
 
 ```bash
-# From your host machine (or inside the container)
+python3 -m venv .venv
+source .venv/bin/activate
+pip install requests
+
 export GITHUB_TOKEN=ghp_...
 python scripts/seed_issues.py
 ```
 
-This creates 6 pre-written issues across three categories:
-- **Dependency upgrades:** PyJWT, cryptography, Pillow
-- **Code quality:** deprecated `datetime.utcnow()`, bare `except` clauses
-- **Security hardening:** HTTP security headers
+This creates 6 issues across three categories:
+
+- **Frontend bugs:** missing button spacing, dead UI controls, input validation, collapse state bugs
+- **Chart warnings:** histogram deprecation warnings
+- **Code quality:** deprecated `datetime.utcnow()` calls (32 occurrences)
 
 ### 4. Trigger remediation
 
-**Option A — Webhook (production flow):**
-Set up a GitHub webhook on your fork pointing to `http://YOUR_HOST:8000/webhook` with content type `application/json` and the `Issues` event. Use ngrok for local testing:
+**Option A — GitHub Actions (event-driven, recommended):**
 
-```bash
-ngrok http 8000
-# Copy the https URL → GitHub repo → Settings → Webhooks → Add
-```
+The Superset fork includes two GitHub Actions workflows:
 
-**Option B — Manual trigger (demo/testing):**
+- `issue-autofix.yml` — triggers when an issue is labeled `devin-autofix`
+- `security-scan.yml` — triggers on push to master when requirements change, or manually via workflow_dispatch
+
+To set up: add `DEVIN_API_KEY` and `DEVIN_ORG_ID` as repository secrets on the Superset fork under Settings → Secrets → Actions.
+
+**Option B — Manual trigger (for demo/testing):**
 
 ```bash
 curl -X POST http://localhost:8000/api/trigger \
   -H "Content-Type: application/json" \
-  -d '{"issue_number": 1, "issue_title": "Upgrade PyJWT", "issue_body": "Update PyJWT to latest stable."}'
+  -d '{"issue_number": 1, "issue_title": "A space is missing for the + SQL Query button", "issue_body": "Fix the missing space in the button label."}'
+```
+
+**Option C — CI scan simulation (Level 2 demo):**
+
+```bash
+source .venv/bin/activate
+python scripts/simulate_ci_scan.py
 ```
 
 ### 5. Monitor
@@ -105,41 +115,23 @@ curl -X POST http://localhost:8000/api/trigger \
 - **JSON API:** http://localhost:8000/api/status
 - **Health check:** http://localhost:8000/api/health
 
-### 6. CI Scan Simulation (Level 2 Demo)
-
-This simulates what a production CI pipeline would do: scan for vulnerabilities, then auto-dispatch Devin to fix each one.
-
-```bash
-# Demo mode — uses realistic pre-scanned vulnerability findings
-python scripts/simulate_ci_scan.py
-
-# With GitHub issue creation for audit trail
-python scripts/simulate_ci_scan.py --create-issues
-
-# Live mode — actually runs pip-audit against Superset's requirements
-pip install pip-audit
-python scripts/simulate_ci_scan.py --live --requirements ../superset/requirements/base.txt
-```
-
-This demonstrates the progression from manual issue-driven remediation (Level 1) to fully automated scanner-driven remediation (Level 2).
-
 ## API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/webhook` | GitHub webhook receiver |
-| `GET` | `/` | Observability dashboard |
-| `GET` | `/api/status` | JSON status + all tasks |
-| `GET` | `/api/health` | Health check |
-| `POST` | `/api/trigger` | Manually trigger a session |
+| Method | Path           | Description                      |
+| ------ | -------------- | -------------------------------- |
+| `GET`  | `/`            | Observability dashboard          |
+| `GET`  | `/api/status`  | JSON status + all tasks          |
+| `GET`  | `/api/health`  | Health check                     |
+| `POST` | `/api/trigger` | Manually trigger a Devin session |
 
 ## Issue Categories
 
-| Category | Example | Devin Complexity |
-|----------|---------|-----------------|
-| Dependency upgrade | Bump PyJWT to latest | Low — version change + test |
-| Code quality | Replace `datetime.utcnow()` | Medium — multi-file refactor |
-| Security hardening | Add HTTP security headers | Medium — config understanding |
+| Category           | Example                                 | Devin Complexity             |
+| ------------------ | --------------------------------------- | ---------------------------- |
+| Frontend bug       | Missing button spacing, dead UI control | Easy–Medium                  |
+| Chart rendering    | Histogram warning, collapse state bug   | Medium                       |
+| Code quality       | Replace deprecated `datetime.utcnow()`  | Medium — multi-file refactor |
+| Security (CI scan) | CVE in dependency, version bump         | Easy                         |
 
 ## Observability
 
@@ -154,15 +146,19 @@ The dashboard provides engineering leadership with:
 
 ```
 devin-superset-autofix/
-├── app.py              # FastAPI server — webhook + dashboard + API
-├── devin_client.py     # Devin API v3 client wrapper
-├── tracker.py          # SQLite persistence for task tracking
-├── poller.py           # Background session status poller
+├── app.py                          # FastAPI server — trigger API + dashboard
+├── devin_client.py                 # Devin API v3 client wrapper
+├── tracker.py                      # SQLite persistence for task tracking
+├── poller.py                       # Background session status poller
 ├── templates/
-│   └── dashboard.html  # Observability dashboard
+│   └── dashboard.html              # Observability dashboard
 ├── scripts/
-│   ├── seed_issues.py          # Creates test issues on your fork
-│   └── simulate_ci_scan.py     # CI pipeline scan simulator (Level 2 demo)
+│   ├── seed_issues.py              # Creates test issues on your fork
+│   └── simulate_ci_scan.py         # CI pipeline scan simulator (Level 2)
+├── .github/
+│   └── workflows/
+│       ├── issue-autofix.yml       # GitHub Action: issue label → Devin
+│       └── security-scan.yml       # GitHub Action: push → scan → Devin
 ├── Dockerfile
 ├── docker-compose.yml
 ├── requirements.txt
@@ -174,7 +170,7 @@ devin-superset-autofix/
 
 In a real customer engagement, this system would be extended with:
 
-- **Snyk / Dependabot / Trivy webhook integration** — trigger from real scan results, not manual issues
+- **Snyk / Dependabot / Trivy integration** — trigger from real scan results
 - **Slack / Teams notifications** — alert channels when PRs are ready for review
 - **Auto-merge with CI gates** — if tests pass, merge the PR automatically
 - **Batch scheduling** — run a nightly sweep of the entire vulnerability backlog
@@ -187,4 +183,5 @@ In a real customer engagement, this system would be extended with:
 - **Devin API v3** for session management
 - **SQLite** for lightweight persistence
 - **Docker** for deployment
-- **GitHub API** for issue management and webhook events
+- **GitHub Actions** for event-driven triggers
+- **GitHub API** for issue management
